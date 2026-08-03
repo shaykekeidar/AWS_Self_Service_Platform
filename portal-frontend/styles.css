@@ -1,0 +1,237 @@
+:root {
+    font-family:
+        Inter,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+
+    color: #172033;
+    background-color: #f3f6fa;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    margin: 0;
+}
+
+button,
+input {
+    font: inherit;
+}
+
+.page-container {
+    width: min(760px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 64px 0;
+}
+
+.page-header {
+    margin-bottom: 28px;
+}
+
+.environment-label {
+    margin: 0 0 8px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #58647a;
+}
+
+h1 {
+    margin: 0;
+    font-size: clamp(2rem, 6vw, 3.2rem);
+    line-height: 1.1;
+}
+
+.page-description {
+    max-width: 620px;
+    margin: 16px 0 0;
+    font-size: 1.05rem;
+    line-height: 1.6;
+    color: #526078;
+}
+
+.platform-card,
+.result-panel {
+    padding: 28px;
+    border: 1px solid #dce3ed;
+    border-radius: 14px;
+    background-color: #ffffff;
+    box-shadow: 0 12px 34px rgba(31, 45, 70, 0.08);
+}
+
+.product-header,
+.result-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+.product-header h2,
+.result-header h2 {
+    margin: 0;
+    font-size: 1.35rem;
+}
+
+.product-header p {
+    margin: 8px 0 0;
+    line-height: 1.5;
+    color: #5c687d;
+}
+
+.product-badge,
+.status-badge {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.product-badge {
+    color: #174b32;
+    background-color: #dff5e8;
+}
+
+.product-details {
+    margin: 26px 0;
+    padding: 18px;
+    border-radius: 10px;
+    background-color: #f7f9fc;
+}
+
+.product-details dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin: 0;
+}
+
+.product-details dl div {
+    min-width: 0;
+}
+
+.product-details dt {
+    margin-bottom: 4px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #6c778a;
+}
+
+.product-details dd {
+    margin: 0;
+    font-weight: 600;
+}
+
+.form-field {
+    margin-bottom: 20px;
+}
+
+.form-field label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 700;
+}
+
+.form-field input {
+    width: 100%;
+    padding: 13px 14px;
+    border: 1px solid #bec8d8;
+    border-radius: 8px;
+    outline: none;
+    background-color: #ffffff;
+}
+
+.form-field input:focus {
+    border-color: #4263eb;
+    box-shadow: 0 0 0 3px rgba(66, 99, 235, 0.16);
+}
+
+.field-help {
+    margin: 7px 0 0;
+    font-size: 0.85rem;
+    color: #69758a;
+}
+
+button {
+    width: 100%;
+    padding: 13px 18px;
+    border: 0;
+    border-radius: 8px;
+    font-weight: 700;
+    color: #ffffff;
+    background-color: #263f8f;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #1f3479;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.result-panel {
+    margin-top: 24px;
+}
+
+.result-panel pre {
+    overflow-x: auto;
+    margin: 20px 0 0;
+    padding: 18px;
+    border-radius: 8px;
+    line-height: 1.5;
+    color: #e7edf7;
+    background-color: #172033;
+}
+
+.status-pending {
+    color: #684b00;
+    background-color: #fff1bd;
+}
+
+.status-success {
+    color: #174b32;
+    background-color: #dff5e8;
+}
+
+.status-error {
+    color: #812121;
+    background-color: #fde3e3;
+}
+
+.hidden {
+    display: none;
+}
+
+@media (max-width: 600px) {
+    .page-container {
+        padding: 32px 0;
+    }
+
+    .platform-card,
+    .result-panel {
+        padding: 20px;
+    }
+
+    .product-header,
+    .result-header {
+        flex-direction: column;
+    }
+
+    .product-details dl {
+        grid-template-columns: 1fr;
+    }
+}

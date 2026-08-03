@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>AWS Mini Platform</title>
+
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <main class="page-container">
+        <header class="page-header">
+            <p class="environment-label">Platform Engineering Lab</p>
+
+            <h1>AWS Mini Platform</h1>
+
+            <p class="page-description">
+                Provision an approved basic EC2 product through a controlled
+                self-service workflow.
+            </p>
+        </header>
+
+        <section class="platform-card">
+            <div class="product-header">
+                <div>
+                    <h2>Basic EC2 Instance</h2>
+
+                    <p>
+                        Creates one platform-managed EC2 instance in the
+                        approved AWS environment.
+                    </p>
+                </div>
+
+                <span class="product-badge">Product</span>
+            </div>
+
+            <div class="product-details">
+                <dl>
+                    <div>
+                        <dt>Region</dt>
+                        <dd>eu-west-1</dd>
+                    </div>
+
+                    <div>
+                        <dt>Network</dt>
+                        <dd>Default VPC</dd>
+                    </div>
+
+                    <div>
+                        <dt>Instance type</dt>
+                        <dd>Platform controlled</dd>
+                    </div>
+
+                    <div>
+                        <dt>Public IPv4</dt>
+                        <dd>Disabled</dd>
+                    </div>
+                </dl>
+            </div>
+
+            <form id="create-instance-form">
+                <div class="form-field">
+                    <label for="instance-name">EC2 instance name</label>
+
+                    <input
+                        id="instance-name"
+                        name="instanceName"
+                        type="text"
+                        minlength="3"
+                        maxlength="30"
+                        pattern="[a-z0-9-]+"
+                        placeholder="example: platform-test-01"
+                        autocomplete="off"
+                        required
+                    >
+
+                    <p class="field-help">
+                        Use 3–30 lowercase letters, numbers, or hyphens.
+                    </p>
+                </div>
+
+                <button id="create-button" type="submit">
+                    Create EC2 Instance
+                </button>
+            </form>
+        </section>
+
+        <section
+            id="result-panel"
+            class="result-panel hidden"
+            aria-live="polite"
+        >
+            <div class="result-header">
+                <h2>Provisioning request</h2>
+
+                <span id="status-badge" class="status-badge">
+                    Pending
+                </span>
+            </div>
+
+            <pre id="result-output"></pre>
+        </section>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
