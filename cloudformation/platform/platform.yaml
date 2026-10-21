@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: AWS Self-Service Platform - API Gateway and Lambda
+
+Resources:
+
+  # IAM execution role for Lambda
+  PlatformLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # Lambda function
+  PlatformLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-handler'
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      Role: !GetAtt PlatformLambdaRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              return {
+                  "statusCode": 200,
+                  "headers": {
+                      "Content-Type": "application/json"
+                  },
+                  "body": json.dumps({
+                      "status": "healthy",
+                      "service": "aws-self-service-platform",
+                      "message": "API Gateway to Lambda integration works"
+                  })
+              }
+
+  # HTTP API
+  PlatformApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: self-service-platform-api
+      ProtocolType: HTTP
+
+  # API Gateway integration with Lambda
+  PlatformIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref PlatformApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt PlatformLambda.Arn
+      PayloadFormatVersion: '2.0'
+
+  # GET /health
+  HealthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref PlatformApi
+      RouteKey: 'GET /health'
+      Target: !Sub 'integrations/${PlatformIntegration}'
+
+  # Default stage
+  PlatformStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref PlatformApi
+      StageName: '$default'
+      AutoDeploy: true
+
+  # Allow API Gateway to invoke Lambda
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref PlatformLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub
+        - 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/GET/health'
+        - ApiId: !Ref PlatformApi
+
+Outputs:
+
+  ApiEndpoint:
+    Description: Base URL of the HTTP API
+    Value: !GetAtt PlatformApi.ApiEndpoint
+
+  HealthEndpoint:
+    Description: Health-check URL
+    Value: !Sub
+      - '${Endpoint}/health'
+      - Endpoint: !GetAtt PlatformApi.ApiEndpoint
+
+  LambdaFunctionName:
+    Value: !Ref PlatformLambda
