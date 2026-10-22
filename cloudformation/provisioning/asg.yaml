@@ -1,0 +1,206 @@
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS Self-Service Platform - ALB and EC2 Auto Scaling Group
+
+Parameters:
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+    Description: EC2 instance type for the Auto Scaling Group
+
+  AllowedCidr:
+    Type: String
+    Description: Approved public IPv4 address in CIDR notation, e.g. 203.0.113.10/32
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/32$'
+
+Resources:
+
+  # 1. ALB security group: public HTTP access from approved IP only
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP from approved public IP
+      VpcId:
+        Fn::ImportValue: self-service-vpc-id
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref AllowedCidr
+      Tags:
+        - Key: Name
+          Value: self-service-alb-sg
+
+  # 2. EC2 security group: application traffic only from ALB
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow application traffic from ALB
+      VpcId:
+        Fn::ImportValue: self-service-vpc-id
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: self-service-ec2-sg
+
+  # 3. Internet-facing ALB in public subnets
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${AWS::StackName}-alb'
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets:
+        - Fn::ImportValue: self-service-public-subnet-a
+        - Fn::ImportValue: self-service-public-subnet-b
+
+  # 4. Target group for private EC2 instances
+  ApplicationTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${AWS::StackName}-tg'
+      VpcId:
+        Fn::ImportValue: self-service-vpc-id
+      Protocol: HTTP
+      Port: 8080
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckPath: /health
+      HealthCheckProtocol: HTTP
+      Matcher:
+        HttpCode: '200'
+
+  # 5. HTTP listener on port 80
+  ApplicationListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ApplicationTargetGroup
+
+  # 6. EC2 launch template
+  ApplicationLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroup
+        MetadataOptions:
+          HttpTokens: required
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub '${AWS::StackName}-ec2'
+              - Key: Project
+                Value: AWS-Self-Service
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            set -euxo pipefail
+
+            mkdir -p /opt/self-service-app
+
+            cat > /opt/self-service-app/server.py <<'PYTHON'
+            from http.server import BaseHTTPRequestHandler, HTTPServer
+            import json
+
+            class Handler(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    if self.path == "/health":
+                        status = 200
+                        payload = {"status": "healthy"}
+                    elif self.path == "/":
+                        status = 200
+                        payload = {
+                            "service": "aws-self-service-platform",
+                            "message": "Running on private EC2 via ALB"
+                        }
+                    else:
+                        status = 404
+                        payload = {"error": "not found"}
+
+                    body = json.dumps(payload).encode("utf-8")
+                    self.send_response(status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+
+            HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+            PYTHON
+
+            cat > /etc/systemd/system/self-service-app.service <<'SERVICE'
+            [Unit]
+            Description=AWS Self-Service Demo Application
+            After=network.target
+
+            [Service]
+            Type=simple
+            ExecStart=/usr/bin/python3 /opt/self-service-app/server.py
+            Restart=always
+            RestartSec=3
+            User=nobody
+
+            [Install]
+            WantedBy=multi-user.target
+            SERVICE
+
+            systemctl daemon-reload
+            systemctl enable --now self-service-app
+
+  # 7. Auto Scaling Group in private subnets
+  ApplicationAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '1'
+      DesiredCapacity: '1'
+      MaxSize: '2'
+      VPCZoneIdentifier:
+        - Fn::ImportValue: self-service-private-subnet-a
+        - Fn::ImportValue: self-service-private-subnet-b
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ApplicationLaunchTemplate
+        Version: !GetAtt ApplicationLaunchTemplate.LatestVersionNumber
+      TargetGroupARNs:
+        - !Ref ApplicationTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-asg-instance'
+          PropagateAtLaunch: true
+
+Outputs:
+  LoadBalancerDNS:
+    Description: Public DNS name of the Application Load Balancer
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  ApplicationURL:
+    Description: HTTP URL for the demo application
+    Value: !Sub
+      - 'http://${DNSName}'
+      - DNSName: !GetAtt ApplicationLoadBalancer.DNSName
+
+  AutoScalingGroupName:
+    Description: Name of the Auto Scaling Group
+    Value: !Ref ApplicationAutoScalingGroup

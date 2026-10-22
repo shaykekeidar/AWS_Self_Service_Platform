@@ -25,26 +25,11 @@ Resources:
     Properties:
       FunctionName: !Sub '${AWS::StackName}-handler'
       Runtime: python3.13
-      Handler: index.lambda_handler
+      Handler: app.lambda_handler
       Role: !GetAtt PlatformLambdaRole.Arn
       Timeout: 10
       MemorySize: 128
-      Code:
-        ZipFile: |
-          import json
-
-          def lambda_handler(event, context):
-              return {
-                  "statusCode": 200,
-                  "headers": {
-                      "Content-Type": "application/json"
-                  },
-                  "body": json.dumps({
-                      "status": "healthy",
-                      "service": "aws-self-service-platform",
-                      "message": "API Gateway to Lambda integration works"
-                  })
-              }
+      Code: ../../lambda/platform/
 
   # HTTP API
   PlatformApi:
