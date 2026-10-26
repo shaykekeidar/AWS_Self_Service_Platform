@@ -1,2 +1,6 @@
 # Generated CloudFormation deployment templates
 cloudformation/platform/platform-packaged.yaml
+
+# Python
+__pycache__/
+*.pyc
