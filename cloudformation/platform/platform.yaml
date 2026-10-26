@@ -128,6 +128,14 @@ Resources:
                     cloudformation:RoleARN: !GetAtt ProvisioningCloudFormationRole.Arn
                     cloudformation:TemplateUrl: !Sub 'https://self-service-artifacts-${AWS::AccountId}-${AWS::Region}.s3.${AWS::Region}.${AWS::URLSuffix}/cloudformation/asg.yaml'
 
+              # Read status of the fixed POC application stack only
+              - Sid: DescribePocApplicationStack
+                Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/self-service-asg-lab01/*'
+
               # Allow passing only the dedicated CloudFormation role
               - Sid: PassProvisioningRole
                 Effect: Allow
@@ -163,7 +171,45 @@ Resources:
           TEMPLATE_URL: !Sub 'https://self-service-artifacts-${AWS::AccountId}-${AWS::Region}.s3.${AWS::Region}.${AWS::URLSuffix}/cloudformation/asg.yaml'
           CFN_EXECUTION_ROLE_ARN: !GetAtt ProvisioningCloudFormationRole.Arn
 
-  # HTTP API = manual fix in order to fix cors problem 
+  # POC browser sign-in: users are created only by an administrator.
+  PortalUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-portal-users'
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+
+  PortalAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref PortalUserPool
+      ClientName: local-portal
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - 'http://localhost:8094/'
+      LogoutURLs:
+        - 'http://localhost:8094/'
+
+  PortalAuthDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref PortalUserPool
+      Domain: !Sub 'ssportal-${AWS::AccountId}-${AWS::Region}'
+      ManagedLoginVersion: 1
+
+  # HTTP API
   PlatformApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
@@ -174,8 +220,11 @@ Resources:
           - 'http://localhost:8094'
         AllowMethods:
           - GET
+          - POST
+          - OPTIONS
         AllowHeaders:
           - Content-Type
+          - Authorization
         MaxAge: 300
 
   # API Gateway integration with Lambda
@@ -195,6 +244,42 @@ Resources:
       RouteKey: 'GET /health'
       Target: !Sub 'integrations/${PlatformIntegration}'
 
+  # JWT authentication for write/status requests. Health remains public.
+  PortalJwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      ApiId: !Ref PlatformApi
+      Name: portal-jwt
+      AuthorizerType: JWT
+      IdentitySource:
+        - '$request.header.Authorization'
+      JwtConfiguration:
+        Issuer: !Sub 'https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${PortalUserPool}'
+        Audience:
+          - !Ref PortalAppClient
+
+  ProvisionRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref PlatformApi
+      RouteKey: 'POST /provision'
+      Target: !Sub 'integrations/${PlatformIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref PortalJwtAuthorizer
+      AuthorizationScopes:
+        - openid
+
+  StackStatusRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref PlatformApi
+      RouteKey: 'GET /stack'
+      Target: !Sub 'integrations/${PlatformIntegration}'
+      AuthorizationType: JWT
+      AuthorizerId: !Ref PortalJwtAuthorizer
+      AuthorizationScopes:
+        - openid
+
   # Default stage
   PlatformStage:
     Type: AWS::ApiGatewayV2::Stage
@@ -211,7 +296,7 @@ Resources:
       FunctionName: !Ref PlatformLambda
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub
-        - 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/GET/health'
+        - 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/*/*'
         - ApiId: !Ref PlatformApi
 
 Outputs:
@@ -232,3 +317,12 @@ Outputs:
 
   LambdaFunctionName:
     Value: !Ref PlatformLambda
+
+  PortalUserPoolId:
+    Value: !Ref PortalUserPool
+
+  PortalAppClientId:
+    Value: !Ref PortalAppClient
+
+  PortalCognitoDomain:
+    Value: !Sub 'https://${PortalAuthDomain}.auth.${AWS::Region}.amazoncognito.com'
