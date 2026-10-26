@@ -3,107 +3,349 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>AWS Self-Service Platform — POC</title>
+  <title>AWS Self-Service Platform — Cognito POC</title>
   <style>
-    :root { font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color:#172b45; background:#f3f6fb; }
+    :root { font-family:system-ui,-apple-system,"Segoe UI",sans-serif; color:#1d3046; background:#f3f6fa; }
     * { box-sizing:border-box; }
     body { margin:0; }
-    header { background:#14243b; color:#fff; padding:22px max(24px, calc((100vw - 1000px)/2)); }
-    header p { color:#b9c8dc; margin:5px 0 0; font-size:14px; }
-    main { max-width:1000px; margin:34px auto; padding:0 24px 50px; }
-    h1 { margin:0; font-size:22px; letter-spacing:-.4px; }
-    h2 { font-size:17px; margin:0 0 14px; }
-    .eyebrow { color:#557193; text-transform:uppercase; letter-spacing:1.3px; font-size:11px; font-weight:800; margin-bottom:9px; }
-    .intro { color:#62748a; margin:0 0 24px; line-height:1.6; }
-    .grid { display:grid; grid-template-columns:1.25fr .75fr; gap:18px; align-items:start; }
-    .card { background:white; border:1px solid #dce4ed; border-radius:14px; padding:24px; box-shadow:0 7px 24px #1d34560a; }
-    label { display:block; font-size:13px; font-weight:700; margin-bottom:8px; }
-    input { width:100%; border:1px solid #b9c8d9; border-radius:9px; padding:12px; font:inherit; font-size:14px; }
-    input:focus { outline:3px solid #dae9fc; border-color:#2e70bb; }
-    .hint { color:#667b92; font-size:12px; line-height:1.55; margin-top:8px; }
-    button { cursor:pointer; border:0; background:#185fa8; color:white; border-radius:9px; padding:12px 18px; font-weight:700; font-size:14px; margin-top:18px; }
-    button:hover { background:#104b88; }
-    button:disabled { background:#abb9c9; cursor:not-allowed; }
-    .status { display:inline-flex; gap:8px; align-items:center; background:#f0f3f7; color:#52667c; border-radius:999px; padding:8px 12px; font-size:12px; font-weight:700; }
-    .dot { background:#8595a7; width:8px; height:8px; border-radius:50%; }
-    .status.ok { background:#e8f6ee; color:#176e40; }
-    .status.ok .dot { background:#1c9b59; }
-    .status.error { background:#fff0ee; color:#af3e31; }
-    .status.error .dot { background:#d34c40; }
-    pre { overflow-wrap:anywhere; white-space:pre-wrap; background:#f5f7fa; border:1px solid #e1e7ef; padding:15px; border-radius:9px; color:#2b4056; font-size:12px; line-height:1.6; min-height:84px; }
-    .flow { font-size:13px; line-height:2.3; color:#47617a; }
-    .flow strong { color:#223a55; }
-    .arrow { color:#8ba3bc; padding:0 4px; }
-    .pill { display:inline-block; border:1px solid #dce4ed; background:#f8fafc; color:#5b6f86; border-radius:999px; padding:5px 9px; font-size:11px; font-weight:700; }
-    .notice { border-left:3px solid #edaa4c; background:#fff9ef; padding:12px 14px; border-radius:6px; color:#78532a; font-size:12px; line-height:1.6; margin-top:18px; }
-    footer { color:#8291a3; text-align:center; margin-top:25px; font-size:12px; }
-    @media (max-width:720px) { .grid { grid-template-columns:1fr; } .card { padding:19px; } main { margin:22px auto; } }
+    header { background:#14243b; color:white; padding:25px 26px; }
+    header>div { max-width:980px; margin:auto; }
+    h1 { margin:0; font-size:23px; }
+    header p { margin:6px 0 0; color:#c1d0e0; font-size:14px; }
+    main { max-width:1030px; padding:28px 24px 50px; margin:auto; }
+    .intro { color:#536a83; line-height:1.6; margin:0 0 24px; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    .card { background:#fff; border:1px solid #dae4ed; border-radius:13px; padding:23px; box-shadow:0 6px 19px #22375008; }
+    h2 { margin:0 0 17px; font-size:18px; }
+    label { display:block; margin:14px 0 6px; font-size:13px; font-weight:700; }
+    input { width:100%; padding:11px 12px; border:1px solid #adc0d1; border-radius:8px; font:inherit; font-size:13px; }
+    input:focus { outline:2px solid #c4def6; border-color:#3579bd; }
+    button { border:0; border-radius:8px; background:#1b63a6; padding:11px 15px; color:white; font-weight:700; cursor:pointer; margin:12px 8px 0 0; }
+    button:hover { background:#154e84; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .secondary { background:#e8eff7; color:#214768; }
+    .secondary:hover { background:#dce8f5; }
+    .hint { font-size:12px; line-height:1.6; color:#667a8c; margin-top:8px; }
+    .status { display:inline-block; border-radius:99px; padding:7px 11px; background:#eef2f5; color:#49627a; font-size:12px; font-weight:700; }
+    .status.ok { background:#e6f7ee; color:#17643d; }
+    .status.error { background:#fff0ee; color:#a42d28; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; padding:13px; border-radius:9px; background:#f5f8fb; border:1px solid #e2eaf1; min-height:66px; line-height:1.5; font-size:12px; }
+    .ip-help { margin:12px 0 16px; padding:12px 14px; background:#f5f8fb; border:1px solid #dae4ed; border-radius:9px; font-size:13px; line-height:1.6; }
+    .ip-help summary { font-weight:700; color:#1b63a6; cursor:pointer; }
+    .ip-help p { margin:10px 0 0; }
+    .ip-help .command { margin:10px 0; min-height:0; user-select:text; }
+    .note { background:#fff8ed; border-left:3px solid #e2a64c; padding:11px 12px; color:#704c24; font-size:12px; line-height:1.6; margin-top:20px; }
+    .flow { line-height:2; font-size:13px; color:#52708c; }
+    .flow strong { color:#24415b; }
+    .full { grid-column:1/-1; }
+    footer { text-align:center; color:#8293a4; margin-top:23px; font-size:12px; }
+    @media(max-width:730px){ .grid { grid-template-columns:1fr; } .card { padding:19px; } main { padding:20px 14px; } }
   </style>
 </head>
 <body>
-  <header><h1>AWS Self-Service Platform</h1><p>Infrastructure provisioning portal · Local proof of concept</p></header>
+  <header><div><h1>AWS Self-Service Platform</h1><p>Local proof of concept · Cognito login + authenticated ASG provisioning</p></div></header>
   <main>
-    <div class="eyebrow">Phase 1 · Backend connectivity</div>
-    <p class="intro">Verify the existing API Gateway → Lambda integration before enabling infrastructure provisioning. The portal runs on <strong>http://localhost:8094</strong>.</p>
+    <p class="intro">Phase 3: authenticate with Amazon Cognito, inspect the fixed ASG stack, and submit a guarded provisioning request. This POC can create billable infrastructure in your AWS account.</p>
     <div class="grid">
       <section class="card">
-        <h2>API Gateway health check</h2>
-        <label for="endpoint">API Gateway HealthEndpoint URL</label>
-        <input id="endpoint" type="url" spellcheck="false" autocomplete="off" placeholder="https://xxxxxxxxxx.execute-api.eu-north-1.amazonaws.com/health">
-        <div class="hint">Paste the <strong>HealthEndpoint</strong> value from CloudFormation → self-service-platform → Outputs. This is <em>not</em> your ALB URL.</div>
-        <button id="check" type="button">Check API health</button>
-        <p><span id="status" class="status"><span class="dot"></span><span id="status-text">Not checked</span></span></p>
-        <label for="result">API response</label>
-        <pre id="result" aria-live="polite">No request sent yet.</pre>
+        <h2>Connection settings</h2>
+        <label for="api">API Gateway base URL</label>
+        <input id="api" type="url" placeholder="https://xxxxxxxxxx.execute-api.eu-north-1.amazonaws.com" spellcheck="false">
+        <p class="hint">CloudFormation → <code>self-service-platform</code> → Outputs → <code>ApiEndpoint</code>. You can also paste <code>HealthEndpoint</code>; its /health suffix will be removed automatically.</p>
+        <label for="domain">Cognito domain</label>
+        <input id="domain" type="url" spellcheck="false" value="https://ssportal-057461015409-eu-north-1.auth.eu-north-1.amazoncognito.com">
+        <label for="client">Cognito app client ID</label>
+        <input id="client" spellcheck="false" value="2omn4ih3f3t7c55qcvv43qvad">
+        <p class="hint">Only endpoint identifiers are shown here. No passwords, client secrets or IAM credentials are needed. These settings are saved in this browser, not sent to the local Python server.</p>
+        <button type="button" class="secondary" id="health">Check API health</button>
+        <p><span class="status" id="healthBadge">Not checked</span></p>
+        <pre id="healthResult">No health request sent.</pre>
       </section>
-      <aside class="card">
-        <h2>Current POC scope</h2>
-        <div class="flow"><strong>Browser on localhost:8094</strong><br><span class="arrow">↓</span><br><strong>API Gateway (HTTPS)</strong><br><span class="arrow">↓</span><br><strong>Lambda</strong><br><span class="arrow">↓</span><br><strong>CloudFormation</strong><br><span class="arrow">↓</span><br><strong>ASG · ALB · Private EC2</strong></div>
-        <div class="notice"><strong>Provisioning is disabled.</strong> This version sends only <code>GET /health</code>. It cannot create or modify AWS resources.</div>
-        <p><span class="pill">Fixed stack: self-service-asg-lab01</span></p>
+      <section class="card">
+        <h2>Cognito authentication</h2>
+        <p><span class="status" id="authBadge">Not signed in</span></p>
+        <button type="button" id="login">Login with Cognito</button>
+        <button type="button" id="logout" class="secondary" disabled>Logout</button>
+        <p class="hint">Login opens AWS Cognito's managed page. After authentication, your browser returns to <code>http://localhost:8094/</code>. This page exchanges the code for tokens using PKCE.</p>
+        <h2 style="margin-top:24px">Authenticated stack status</h2>
+        <button type="button" id="stack" disabled>Check ASG stack status</button>
+        <p><span class="status" id="stackBadge">Sign in first</span></p>
+        <pre id="stackResult">No protected request sent.</pre>
+        <div class="note"><strong>Fixed POC target:</strong> <code>self-service-asg-lab01</code>. Your existing <code>self-service-asg-test01</code> is a separate stack and remains untouched.</div>
+      </section>
+      <section class="card full">
+        <h2>Provision the approved ASG stack</h2>
+        <p class="hint">Only the fixed <code>self-service-asg-lab01</code> stack is eligible. Lambda uses <code>asg.yaml</code> and <code>t3.micro</code>. This operation can create an ALB, EC2 instances and other billable AWS resources.</p>
+        <label for="publicIp">Your public IPv4 address (for the allowed ingress CIDR)</label>
+        <input id="publicIp" type="text" inputmode="decimal" autocomplete="off" placeholder="e.g. 203.0.113.10" spellcheck="false">
+        <p class="hint">Enter your current public IPv4 address, without <code>/32</code>. Lambda restricts the template's <code>AllowedCidr</code> parameter to that IP. Do not use a private LAN address such as 192.168.x.x.</p>
+        <details class="ip-help">
+          <summary>How do I find my public IPv4 address?</summary>
+          <p>On your Windows PC, open PowerShell and run:</p>
+          <pre class="command">(Invoke-RestMethod -Uri 'https://checkip.amazonaws.com').Trim()</pre>
+          <p>Copy the IPv4 address printed by the command into the field above. <strong>Do not add <code>/32</code></strong>; the Lambda function adds that automatically.</p>
+          <p>Alternatively, open <a href="https://checkip.amazonaws.com/" target="_blank" rel="noopener noreferrer">AWS Check IP</a> in your browser and copy the displayed address.</p>
+          <p class="hint">Use your internet-facing public IPv4 address, not the private address shown by <code>ipconfig</code>. If your ISP or VPN changes your public IP, the existing <code>/32</code> ingress rule will not automatically update.</p>
+        </details>
+        <p><span class="status" id="provisionBadge">Sign in and check stack status first</span></p>
+        <button type="button" id="provision" disabled>Provision ASG — lab01</button>
+        <button type="button" class="secondary" id="refreshAfter" disabled>Refresh stack status</button>
+        <p class="hint"><strong>Latest GET /stack response (live status):</strong></p>
+        <pre id="refreshResult">No stack status refresh sent yet.</pre>
+        <p class="hint"><strong>POST /provision response (original request acknowledgment):</strong></p>
+        <pre id="provisionResult">No provisioning request sent.</pre>
+        <div class="note"><strong>Cost guardrail:</strong> Provisioning requires your explicit confirmation. The browser will not auto-submit requests. If the stack already exists, the backend returns HTTP 409 rather than creating a second stack with the same name.</div>
+      </section>
+      <aside class="card full">
+        <h2>What we are validating</h2>
+        <div class="flow"><strong>Browser — localhost:8094</strong> → <strong>Cognito Managed Login</strong> → <strong>OAuth Code + PKCE</strong> → <strong>Access token</strong> → <strong>API Gateway JWT Authorizer</strong> → <strong>Lambda GET /stack or POST /provision</strong></div>
+        <p class="hint">Tokens remain in page memory only. Refreshing the page requires signing in again. Do not paste authentication codes, tokens or passwords into chat, Git or screenshots.</p>
       </aside>
     </div>
-    <footer>AWS Self-Service Platform · Local POC · No CloudFront or S3 frontend hosting</footer>
+    <footer>AWS Self-Service Platform POC · No CloudFront · No S3 frontend · Local HTTP server on port 8094</footer>
   </main>
-  <script>
-    'use strict';
-    const button = document.getElementById('check');
-    const endpoint = document.getElementById('endpoint');
-    const status = document.getElementById('status');
-    const statusText = document.getElementById('status-text');
-    const result = document.getElementById('result');
-    function show(state, label, body) {
-      status.className = 'status' + (state ? ' ' + state : '');
-      statusText.textContent = label;
-      result.textContent = body;
+<script>
+'use strict';
+const REDIRECT_URI = 'http://localhost:8094/';
+const PKCE_KEY = 'ssportal_pkce_transaction_v2';
+const CFG_KEY = 'ssportal_public_config_v2';
+const el = id => document.getElementById(id);
+let accessToken = null;
+let expiresAt = 0;
+let lastStackFound = null;
+let provisioningInProgress = false;
+const fmt = data => typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+function status(element, state, message) {
+  element.className = 'status' + (state ? ' ' + state : '');
+  element.textContent = message;
+}
+function showAuth(active, message) {
+  status(el('authBadge'), active ? 'ok' : '', message);
+  el('stack').disabled = !active;
+  el('refreshAfter').disabled = !active;
+  if (!active) lastStackFound = null;
+  refreshProvisionButton();
+  el('logout').disabled = !active;
+  el('login').disabled = active;
+}
+function isAuthenticated() { return !!accessToken && Date.now() < expiresAt - 15000; }
+function validPublicIPv4(value) {
+  const parts=value.trim().split('.');
+  if (parts.length!==4 || parts.some(p=>!/^(0|[1-9]\d{0,2})$/.test(p) || Number(p)>255)) return false;
+  const nums=parts.map(Number);
+  if (nums[0]===0 || nums[0]===10 || nums[0]===127 || nums[0]>=224) return false;
+  if (nums[0]===169 && nums[1]===254) return false;
+  if (nums[0]===172 && nums[1]>=16 && nums[1]<=31) return false;
+  if (nums[0]===192 && nums[1]===168) return false;
+  if (nums[0]===100 && nums[1]>=64 && nums[1]<=127) return false;
+  return true; // Backend performs authoritative public/global IPv4 check.
+}
+function refreshProvisionButton() {
+  const allowed = isAuthenticated() && lastStackFound === false && !provisioningInProgress && validPublicIPv4(el('publicIp').value);
+  el('provision').disabled = !allowed;
+  if (provisioningInProgress) status(el('provisionBadge'),'','Submitting provisioning request…');
+  else if (!isAuthenticated()) status(el('provisionBadge'),'','Sign in first');
+  else if (lastStackFound === true) status(el('provisionBadge'),'error','lab01 already exists — provisioning disabled');
+  else if (lastStackFound === null) status(el('provisionBadge'),'','Check ASG stack status first');
+  else if (!validPublicIPv4(el('publicIp').value)) status(el('provisionBadge'),'','Enter a public IPv4 address');
+  else status(el('provisionBadge'),'ok','Eligible to provision lab01');
+}
+function saveConfig() {
+  localStorage.setItem(CFG_KEY, JSON.stringify({api:el('api').value.trim(), domain:el('domain').value.trim(), client:el('client').value.trim()}));
+}
+function restoreConfig() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem(CFG_KEY) || '{}');
+    for (const key of ['api','domain','client']) if (cfg[key]) el(key).value = cfg[key];
+  } catch {}
+}
+function config() {
+  let api = el('api').value.trim().replace(/\/+$/, '');
+  if (api.endsWith('/health')) api = api.slice(0, -7);
+  const apiUrl = new URL(api);
+  if (apiUrl.protocol !== 'https:' || !/^[-a-z0-9]+\.execute-api\.eu-north-1\.amazonaws\.com$/i.test(apiUrl.hostname) || apiUrl.username || apiUrl.password || apiUrl.search || apiUrl.hash || apiUrl.pathname !== '/') {
+    throw new Error('Enter the eu-north-1 HTTPS API Gateway base URL (not the ALB URL).');
+  }
+  const domainUrl = new URL(el('domain').value.trim().replace(/\/+$/, ''));
+  if (domainUrl.protocol !== 'https:' || !/^[-a-z0-9]+\.auth\.eu-north-1\.amazoncognito\.com$/i.test(domainUrl.hostname) || domainUrl.pathname !== '/' || domainUrl.search || domainUrl.hash) {
+    throw new Error('Enter your HTTPS Cognito managed-login domain in eu-north-1.');
+  }
+  const clientId = el('client').value.trim();
+  if (!/^[a-zA-Z0-9]+$/.test(clientId)) throw new Error('Invalid Cognito App Client ID.');
+  return {api: apiUrl.origin, domain:domainUrl.origin, clientId};
+}
+function b64url(bytes) {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function randomValue(count=32) {
+  const bytes = new Uint8Array(count);
+  crypto.getRandomValues(bytes);
+  return b64url(bytes);
+}
+async function challengeFrom(verifier) {
+  const bytes = new TextEncoder().encode(verifier);
+  return b64url(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)));
+}
+async function login() {
+  try {
+    const cfg = config();
+    saveConfig();
+    const verifier = randomValue(64);
+    const state = randomValue(32);
+    const challenge = await challengeFrom(verifier);
+    sessionStorage.setItem(PKCE_KEY, JSON.stringify({verifier,state,created:Date.now(),clientId:cfg.clientId,domain:cfg.domain}));
+    const url = new URL(cfg.domain + '/oauth2/authorize');
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('client_id', cfg.clientId);
+    url.searchParams.set('redirect_uri', REDIRECT_URI);
+    url.searchParams.set('scope', 'openid email');
+    url.searchParams.set('state', state);
+    url.searchParams.set('code_challenge_method', 'S256');
+    url.searchParams.set('code_challenge', challenge);
+    window.location.assign(url.href);
+  } catch (err) { status(el('authBadge'), 'error', 'Login setup error'); el('stackResult').textContent = String(err.message || err); }
+}
+async function callback() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const error = params.get('error');
+  if (!code && !error) return;
+  // Remove the one-time authorization code from the address bar immediately.
+  history.replaceState(null, '', REDIRECT_URI);
+  const raw = sessionStorage.getItem(PKCE_KEY);
+  sessionStorage.removeItem(PKCE_KEY);
+  try {
+    if (error) throw new Error('Cognito error: ' + error + ' — ' + (params.get('error_description') || ''));
+    if (!raw) throw new Error('No matching PKCE login transaction. Start login using the Login button on this page.');
+    const transaction = JSON.parse(raw);
+    if (!transaction.state || params.get('state') !== transaction.state) throw new Error('OAuth state mismatch; login rejected.');
+    if (Date.now() - transaction.created > 10*60*1000) throw new Error('Login transaction expired. Start again.');
+    const cfg = config();
+    if (cfg.clientId !== transaction.clientId || cfg.domain !== transaction.domain) throw new Error('Cognito settings changed during login.');
+    status(el('authBadge'), '', 'Exchanging authorization code…');
+    const request = new URLSearchParams({grant_type:'authorization_code', client_id:cfg.clientId, code, redirect_uri:REDIRECT_URI, code_verifier:transaction.verifier});
+    const response = await fetch(cfg.domain + '/oauth2/token', {method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:request.toString(),cache:'no-store'});
+    if (!response.ok) throw new Error('Token exchange failed (HTTP ' + response.status + '). Check PKCE/client/callback configuration.');
+    const tokens = await response.json();
+    if (!tokens.access_token || !tokens.expires_in) throw new Error('Token response did not contain a usable access token.');
+    accessToken = tokens.access_token;
+    expiresAt = Date.now() + Number(tokens.expires_in)*1000;
+    showAuth(true, 'Signed in with Cognito');
+    el('stackResult').textContent = 'Login succeeded. Click “Check ASG stack status” to test JWT authorization.';
+  } catch (err) {
+    accessToken = null;
+    showAuth(false, 'Sign-in could not complete');
+    status(el('authBadge'), 'error', 'Sign-in failed');
+    el('stackResult').textContent = String(err.message || err);
+  }
+}
+async function health() {
+  el('health').disabled = true;
+  try {
+    const cfg = config(); saveConfig();
+    const response = await fetch(cfg.api+'/health', {cache:'no-store'});
+    const body = await response.json();
+    status(el('healthBadge'),response.ok && body.status==='healthy'?'ok':'error',response.ok && body.status==='healthy'?'API healthy':'Unexpected response: '+response.status);
+    el('healthResult').textContent = fmt(body);
+  } catch (err) {
+    status(el('healthBadge'),'error','Health check failed'); el('healthResult').textContent=String(err.message||err);
+  } finally {el('health').disabled=false;}
+}
+async function stack() {
+  if (!accessToken || Date.now() >= expiresAt - 15000) {accessToken=null;showAuth(false,'Session expired — log in again');return;}
+  el('stack').disabled = true;
+  el('refreshAfter').disabled = true;
+  el('refreshAfter').textContent = 'Checking…';
+  status(el('stackBadge'),'','Checking…');
+  el('refreshResult').textContent='Requesting current CloudFormation status…';
+  try {
+    const cfg = config(); saveConfig();
+    const response = await fetch(cfg.api+'/stack', {headers:{Authorization:'Bearer '+accessToken},cache:'no-store'});
+    const bodyText = await response.text();
+    let data; try {data=JSON.parse(bodyText);} catch {data=bodyText;}
+    status(el('stackBadge'),response.ok?'ok':'error',response.ok?'Authorized API response (200)':'HTTP '+response.status);
+    el('stackResult').textContent=fmt(data);
+    el('refreshResult').textContent=fmt(data);
+    if (response.ok && data && typeof data.status === 'string') {
+      status(el('stackBadge'), 'ok', 'Current stack status: '+data.status);
     }
-    button.addEventListener('click', async () => {
-      const raw = endpoint.value.trim();
-      let url;
-      try {
-        url = new URL(raw);
-        if (url.protocol !== 'https:' || !url.hostname.endsWith('.execute-api.eu-north-1.amazonaws.com') || url.pathname !== '/health' || url.search || url.hash || url.username || url.password) {
-          throw new Error('Use the HTTPS API Gateway HealthEndpoint URL in eu-north-1, ending with /health.');
-        }
-      } catch (err) {
-        show('error', 'Invalid URL', err.message || 'Enter a valid health endpoint.');
-        return;
-      }
-      button.disabled = true;
-      show('', 'Checking…', 'Sending GET ' + url.href);
-      try {
-        const response = await fetch(url.href, { method: 'GET', mode: 'cors', cache: 'no-store' });
-        const body = await response.text();
-        let data;
-        try { data = JSON.parse(body); } catch { data = body; }
-        const formatted = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
-        const healthy = response.ok && data && data.status === 'healthy';
-        show(healthy ? 'ok' : 'error', healthy ? 'API healthy' : 'Unexpected response (' + response.status + ')', formatted);
-      } catch (err) {
-        show('error', 'Request failed', String(err.message || err) + '\n\nIf the API works directly in a browser but fails here, configure API Gateway CORS to allow origin http://localhost:8094 (GET).');
-      } finally { button.disabled = false; }
+    if (response.ok) {
+      lastStackFound = (data && data.status === 'NOT_FOUND' && data.stackName === 'self-service-asg-lab01') ? false : true;
+    } else lastStackFound = null;
+    refreshProvisionButton();
+    if (response.status===401) {accessToken=null;showAuth(false,'Token rejected — log in again');}
+  } catch (err) {
+    status(el('stackBadge'),'error','Request failed');
+    el('stackResult').textContent=String(err.message||err);
+    el('refreshResult').textContent='Refresh failed: '+String(err.message||err);
+  } finally {
+    el('stack').disabled=!isAuthenticated();
+    el('refreshAfter').disabled=!isAuthenticated();
+    el('refreshAfter').textContent='Refresh stack status';
+  }
+}
+async function provision() {
+  if (!isAuthenticated() || lastStackFound !== false || provisioningInProgress) return;
+  const publicIp = el('publicIp').value.trim();
+  if (!validPublicIPv4(publicIp)) {refreshProvisionButton(); return;}
+  const confirmed = window.confirm('Provision self-service-asg-lab01 in eu-north-1? This creates billable AWS resources (including ALB and EC2). Your existing test01 stack will remain running.');
+  if (!confirmed) return;
+  provisioningInProgress = true;
+  lastStackFound = null;
+  refreshProvisionButton();
+  try {
+    const cfg=config(); saveConfig();
+    const response=await fetch(cfg.api+'/provision', {
+      method:'POST',
+      headers:{'Authorization':'Bearer '+accessToken, 'Content-Type':'application/json'},
+      body:JSON.stringify({publicIp}),
+      cache:'no-store'
     });
-  </script>
+    const bodyText=await response.text();
+    let data; try {data=JSON.parse(bodyText);} catch {data=bodyText;}
+    el('provisionResult').textContent=fmt(data);
+    if (response.status===202 && data && data.status==='CREATE_REQUESTED') {
+      status(el('provisionBadge'),'ok','CREATE_REQUESTED — check status');
+      lastStackFound=true;
+    } else if (response.status===409) {
+      status(el('provisionBadge'),'error','Stack already exists (409)');
+      lastStackFound=true;
+    } else {
+      status(el('provisionBadge'),'error','Provisioning rejected: HTTP '+response.status);
+      if (response.status===401) {accessToken=null;showAuth(false,'Token rejected — log in again');}
+    }
+  } catch(err) {
+    status(el('provisionBadge'),'error','Request failed — check stack status before retrying');
+    el('provisionResult').textContent=String(err.message||err);
+  } finally {
+    provisioningInProgress=false;
+    // Force a fresh GET /stack before any possible re-submission.
+    lastStackFound=null;
+    el('provision').disabled=true;
+  }
+}
+function logout() {
+  const cfg = config();
+  accessToken = null; expiresAt = 0; sessionStorage.removeItem(PKCE_KEY);
+  showAuth(false,'Logged out locally');
+  const url = new URL(cfg.domain+'/logout');
+  url.searchParams.set('client_id',cfg.clientId);
+  url.searchParams.set('logout_uri',REDIRECT_URI);
+  window.location.assign(url.href);
+}
+el('login').addEventListener('click',login);
+el('logout').addEventListener('click',()=>{try{logout();}catch(err){status(el('authBadge'),'error',String(err.message||err));}});
+el('health').addEventListener('click',health);
+el('stack').addEventListener('click',stack);
+el('refreshAfter').addEventListener('click',stack);
+el('publicIp').addEventListener('input',refreshProvisionButton);
+el('provision').addEventListener('click',provision);
+restoreConfig();
+showAuth(false,'Not signed in');
+refreshProvisionButton();
+callback();
+</script>
 </body>
 </html>
