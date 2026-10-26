@@ -1,8 +1,98 @@
+
 AWSTemplateFormatVersion: '2010-09-09'
 
 Description: AWS Self-Service Platform - API Gateway and Lambda
 
 Resources:
+
+  # CloudFormation execution role for application provisioning
+  ProvisioningCloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-cfn-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+
+      Policies:
+        - PolicyName: application-provisioning
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+
+              # Read only the approved Stack 3 template
+              - Sid: ReadProvisioningTemplate
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::self-service-artifacts-${AWS::AccountId}-${AWS::Region}/cloudformation/asg.yaml'
+
+              # EC2 networking and launch templates
+              - Sid: EC2Provisioning
+                Effect: Allow
+                Action:
+                  - ec2:CreateSecurityGroup
+                  - ec2:DeleteSecurityGroup
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeImages
+                  - ec2:DescribeInstances
+                  - ec2:CreateLaunchTemplate
+                  - ec2:DeleteLaunchTemplate
+                  - ec2:DescribeLaunchTemplates
+                  - ec2:DescribeLaunchTemplateVersions
+                  - ec2:CreateTags
+                  - ec2:RunInstances
+                Resource: '*'
+
+              # Application Load Balancer
+              - Sid: LoadBalancerProvisioning
+                Effect: Allow
+                Action:
+                  - elasticloadbalancing:CreateLoadBalancer
+                  - elasticloadbalancing:DeleteLoadBalancer
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  - elasticloadbalancing:CreateTargetGroup
+                  - elasticloadbalancing:DeleteTargetGroup
+                  - elasticloadbalancing:DescribeTargetGroups
+                  - elasticloadbalancing:CreateListener
+                  - elasticloadbalancing:DeleteListener
+                  - elasticloadbalancing:DescribeListeners
+                  - elasticloadbalancing:ModifyLoadBalancerAttributes
+                  - elasticloadbalancing:DescribeLoadBalancerAttributes
+                  - elasticloadbalancing:ModifyTargetGroupAttributes
+                  - elasticloadbalancing:DescribeTargetGroupAttributes
+                  - elasticloadbalancing:AddTags
+                  - elasticloadbalancing:RemoveTags
+                Resource: '*'
+
+              # Auto Scaling
+              - Sid: AutoScalingProvisioning
+                Effect: Allow
+                Action:
+                  - autoscaling:CreateAutoScalingGroup
+                  - autoscaling:DeleteAutoScalingGroup
+                  - autoscaling:UpdateAutoScalingGroup
+                  - autoscaling:DescribeAutoScalingGroups
+                  - autoscaling:DescribeScalingActivities
+                Resource: '*'
+
+              # Amazon Linux AMI lookup
+              - Sid: AMIParameterLookup
+                Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/ami-amazon-linux-latest/*'
 
   # IAM execution role for Lambda
   PlatformLambdaRole:
@@ -16,8 +106,46 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
+
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        - PolicyName: cloudformation-provisioning
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+
+              # Allow Lambda to create approved application stacks
+              - Sid: CreateApplicationStacks
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/self-service-asg-*/*'
+                Condition:
+                  StringEquals:
+                    cloudformation:RoleARN: !GetAtt ProvisioningCloudFormationRole.Arn
+                    cloudformation:TemplateUrl: !Sub 'https://self-service-artifacts-${AWS::AccountId}-${AWS::Region}.s3.${AWS::Region}.${AWS::URLSuffix}/cloudformation/asg.yaml'
+
+              # Allow passing only the dedicated CloudFormation role
+              - Sid: PassProvisioningRole
+                Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt ProvisioningCloudFormationRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: cloudformation.amazonaws.com
+
+              # Allow Lambda to read the approved provisioning template
+              - Sid: ReadProvisioningTemplate
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::self-service-artifacts-${AWS::AccountId}-${AWS::Region}/cloudformation/asg.yaml'
 
   # Lambda function
   PlatformLambda:
@@ -30,13 +158,25 @@ Resources:
       Timeout: 10
       MemorySize: 128
       Code: ../../lambda/platform/
+      Environment:
+        Variables:
+          TEMPLATE_URL: !Sub 'https://self-service-artifacts-${AWS::AccountId}-${AWS::Region}.s3.${AWS::Region}.${AWS::URLSuffix}/cloudformation/asg.yaml'
+          CFN_EXECUTION_ROLE_ARN: !GetAtt ProvisioningCloudFormationRole.Arn
 
-  # HTTP API
+  # HTTP API = manual fix in order to fix cors problem 
   PlatformApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
       Name: self-service-platform-api
       ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - 'http://localhost:8094'
+        AllowMethods:
+          - GET
+        AllowHeaders:
+          - Content-Type
+        MaxAge: 300
 
   # API Gateway integration with Lambda
   PlatformIntegration:
@@ -75,6 +215,10 @@ Resources:
         - ApiId: !Ref PlatformApi
 
 Outputs:
+
+  ProvisioningCloudFormationRoleArn:
+    Description: IAM execution role for application provisioning stacks
+    Value: !GetAtt ProvisioningCloudFormationRole.Arn
 
   ApiEndpoint:
     Description: Base URL of the HTTP API

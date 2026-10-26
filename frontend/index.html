@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>AWS Self-Service Platform — POC</title>
+  <style>
+    :root { font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; color:#172b45; background:#f3f6fb; }
+    * { box-sizing:border-box; }
+    body { margin:0; }
+    header { background:#14243b; color:#fff; padding:22px max(24px, calc((100vw - 1000px)/2)); }
+    header p { color:#b9c8dc; margin:5px 0 0; font-size:14px; }
+    main { max-width:1000px; margin:34px auto; padding:0 24px 50px; }
+    h1 { margin:0; font-size:22px; letter-spacing:-.4px; }
+    h2 { font-size:17px; margin:0 0 14px; }
+    .eyebrow { color:#557193; text-transform:uppercase; letter-spacing:1.3px; font-size:11px; font-weight:800; margin-bottom:9px; }
+    .intro { color:#62748a; margin:0 0 24px; line-height:1.6; }
+    .grid { display:grid; grid-template-columns:1.25fr .75fr; gap:18px; align-items:start; }
+    .card { background:white; border:1px solid #dce4ed; border-radius:14px; padding:24px; box-shadow:0 7px 24px #1d34560a; }
+    label { display:block; font-size:13px; font-weight:700; margin-bottom:8px; }
+    input { width:100%; border:1px solid #b9c8d9; border-radius:9px; padding:12px; font:inherit; font-size:14px; }
+    input:focus { outline:3px solid #dae9fc; border-color:#2e70bb; }
+    .hint { color:#667b92; font-size:12px; line-height:1.55; margin-top:8px; }
+    button { cursor:pointer; border:0; background:#185fa8; color:white; border-radius:9px; padding:12px 18px; font-weight:700; font-size:14px; margin-top:18px; }
+    button:hover { background:#104b88; }
+    button:disabled { background:#abb9c9; cursor:not-allowed; }
+    .status { display:inline-flex; gap:8px; align-items:center; background:#f0f3f7; color:#52667c; border-radius:999px; padding:8px 12px; font-size:12px; font-weight:700; }
+    .dot { background:#8595a7; width:8px; height:8px; border-radius:50%; }
+    .status.ok { background:#e8f6ee; color:#176e40; }
+    .status.ok .dot { background:#1c9b59; }
+    .status.error { background:#fff0ee; color:#af3e31; }
+    .status.error .dot { background:#d34c40; }
+    pre { overflow-wrap:anywhere; white-space:pre-wrap; background:#f5f7fa; border:1px solid #e1e7ef; padding:15px; border-radius:9px; color:#2b4056; font-size:12px; line-height:1.6; min-height:84px; }
+    .flow { font-size:13px; line-height:2.3; color:#47617a; }
+    .flow strong { color:#223a55; }
+    .arrow { color:#8ba3bc; padding:0 4px; }
+    .pill { display:inline-block; border:1px solid #dce4ed; background:#f8fafc; color:#5b6f86; border-radius:999px; padding:5px 9px; font-size:11px; font-weight:700; }
+    .notice { border-left:3px solid #edaa4c; background:#fff9ef; padding:12px 14px; border-radius:6px; color:#78532a; font-size:12px; line-height:1.6; margin-top:18px; }
+    footer { color:#8291a3; text-align:center; margin-top:25px; font-size:12px; }
+    @media (max-width:720px) { .grid { grid-template-columns:1fr; } .card { padding:19px; } main { margin:22px auto; } }
+  </style>
+</head>
+<body>
+  <header><h1>AWS Self-Service Platform</h1><p>Infrastructure provisioning portal · Local proof of concept</p></header>
+  <main>
+    <div class="eyebrow">Phase 1 · Backend connectivity</div>
+    <p class="intro">Verify the existing API Gateway → Lambda integration before enabling infrastructure provisioning. The portal runs on <strong>http://localhost:8094</strong>.</p>
+    <div class="grid">
+      <section class="card">
+        <h2>API Gateway health check</h2>
+        <label for="endpoint">API Gateway HealthEndpoint URL</label>
+        <input id="endpoint" type="url" spellcheck="false" autocomplete="off" placeholder="https://xxxxxxxxxx.execute-api.eu-north-1.amazonaws.com/health">
+        <div class="hint">Paste the <strong>HealthEndpoint</strong> value from CloudFormation → self-service-platform → Outputs. This is <em>not</em> your ALB URL.</div>
+        <button id="check" type="button">Check API health</button>
+        <p><span id="status" class="status"><span class="dot"></span><span id="status-text">Not checked</span></span></p>
+        <label for="result">API response</label>
+        <pre id="result" aria-live="polite">No request sent yet.</pre>
+      </section>
+      <aside class="card">
+        <h2>Current POC scope</h2>
+        <div class="flow"><strong>Browser on localhost:8094</strong><br><span class="arrow">↓</span><br><strong>API Gateway (HTTPS)</strong><br><span class="arrow">↓</span><br><strong>Lambda</strong><br><span class="arrow">↓</span><br><strong>CloudFormation</strong><br><span class="arrow">↓</span><br><strong>ASG · ALB · Private EC2</strong></div>
+        <div class="notice"><strong>Provisioning is disabled.</strong> This version sends only <code>GET /health</code>. It cannot create or modify AWS resources.</div>
+        <p><span class="pill">Fixed stack: self-service-asg-lab01</span></p>
+      </aside>
+    </div>
+    <footer>AWS Self-Service Platform · Local POC · No CloudFront or S3 frontend hosting</footer>
+  </main>
+  <script>
+    'use strict';
+    const button = document.getElementById('check');
+    const endpoint = document.getElementById('endpoint');
+    const status = document.getElementById('status');
+    const statusText = document.getElementById('status-text');
+    const result = document.getElementById('result');
+    function show(state, label, body) {
+      status.className = 'status' + (state ? ' ' + state : '');
+      statusText.textContent = label;
+      result.textContent = body;
+    }
+    button.addEventListener('click', async () => {
+      const raw = endpoint.value.trim();
+      let url;
+      try {
+        url = new URL(raw);
+        if (url.protocol !== 'https:' || !url.hostname.endsWith('.execute-api.eu-north-1.amazonaws.com') || url.pathname !== '/health' || url.search || url.hash || url.username || url.password) {
+          throw new Error('Use the HTTPS API Gateway HealthEndpoint URL in eu-north-1, ending with /health.');
+        }
+      } catch (err) {
+        show('error', 'Invalid URL', err.message || 'Enter a valid health endpoint.');
+        return;
+      }
+      button.disabled = true;
+      show('', 'Checking…', 'Sending GET ' + url.href);
+      try {
+        const response = await fetch(url.href, { method: 'GET', mode: 'cors', cache: 'no-store' });
+        const body = await response.text();
+        let data;
+        try { data = JSON.parse(body); } catch { data = body; }
+        const formatted = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+        const healthy = response.ok && data && data.status === 'healthy';
+        show(healthy ? 'ok' : 'error', healthy ? 'API healthy' : 'Unexpected response (' + response.status + ')', formatted);
+      } catch (err) {
+        show('error', 'Request failed', String(err.message || err) + '\n\nIf the API works directly in a browser but fails here, configure API Gateway CORS to allow origin http://localhost:8094 (GET).');
+      } finally { button.disabled = false; }
+    });
+  </script>
+</body>
+</html>
