@@ -1,26 +1,50 @@
 # AWS Self-Service Platform
 
-A CloudFormation-based AWS self-service infrastructure project designed to provision application environments using a reusable network, a serverless control plane, and independently managed EC2 Auto Scaling stacks.
+**Version:** V1 — implemented, control-plane verified POC  
+**Last verification:** November 3, 2026  
+**AWS Region:** `eu-north-1`
 
-## 1. Architecture Overview
+A CloudFormation-based AWS self-service proof of concept (POC). A local browser portal authenticates users with Amazon Cognito (OAuth 2.0 Authorization Code + PKCE) and calls protected API Gateway endpoints backed by Lambda. Lambda can request creation of a fixed application stack comprising an internet-facing Application Load Balancer (ALB) and an EC2 Auto Scaling Group (ASG) in private subnets.
 
-The solution consists of three independent AWS CloudFormation stacks.
+**Scope:** V1 is a fixed-template, fixed-stack-name lab—not a general-purpose multi-tenant provisioning service. Provisioning creates billable AWS resources. The application stack is normally deleted after testing; the network and platform stacks may remain deployed at low usage-based cost.
 
-| Stack | Template | Purpose |
+## 1. Architecture
+
+The project has three **independent, non-nested** CloudFormation stacks:
+
+| Stack | Source template | Responsibility |
 |---|---|---|
-| `self-service-network` | `cloudformation/network/network.yaml` | VPC, public/private subnets, Internet Gateway, and routing |
-| `self-service-platform` | `cloudformation/platform/platform.yaml` | API Gateway, Lambda, and Lambda IAM execution role |
-| `self-service-asg-<request-id>` | `cloudformation/provisioning/asg.yaml` | ALB, security groups, launch template, EC2 Auto Scaling Group |
+| `self-service-network` | `cloudformation/network/network.yaml` | Dedicated VPC, public/private subnets, internet gateway, routing, and exports |
+| `self-service-platform` | `cloudformation/platform/platform.yaml` | API Gateway HTTP API, Lambda, IAM roles, Cognito User Pool, app client, and domain |
+| `self-service-asg-lab01` | `cloudformation/provisioning/asg.yaml` | ALB, security groups, target group, listener, EC2 launch template, and ASG |
 
-The stacks are independent rather than nested.
+The network stack exports identifiers consumed by the application template via `Fn::ImportValue`. The platform stack can remain deployed while the application stack is absent. The application stack is **created on demand** through Lambda's CloudFormation `CreateStack` call. A separate manual stack name, `self-service-asg-test01`, was used during earlier testing and is not the portal's fixed provisioning target.
 
-The network stack exports shared infrastructure identifiers that the provisioning stack imports.
+### Control-plane flow
 
-The platform stack is intended to become the control plane for automated provisioning. Currently, application stacks are deployed manually using the AWS CLI.
+```text
+Browser at http://localhost:8094/
+  -> Cognito Managed Login (authorization code + PKCE S256)
+  -> Browser receives access token
+  -> API Gateway HTTP API (JWT authorizer on protected routes)
+  -> Lambda (Python 3.13)
+  -> CloudFormation DescribeStacks or CreateStack
+  -> self-service-asg-lab01 (when provisioning is requested)
+```
 
-## 2. Network Design
+`GET /health` is public. `GET /stack` and `POST /provision` require a Cognito access token with the `openid` scope, validated by API Gateway's JWT authorizer. Lambda also checks that the API Gateway authorizer context is present; it relies on API Gateway for cryptographic JWT validation.
 
-The project uses a dedicated VPC rather than the default AWS VPC.
+### Application data path
+
+```text
+Approved public IPv4 /32 -> internet-facing ALB (HTTP :80)
+  -> target group (HTTP :8080, GET /health)
+  -> EC2 instance(s) in private subnets
+```
+
+The ASG has minimum/desired/maximum capacity **1/1/2**. There is no CPU-based scaling policy in V1; the ASG maintains desired capacity and can replace unhealthy instances.
+
+## 2. Network design
 
 | Component | CIDR |
 |---|---|
@@ -30,337 +54,250 @@ The project uses a dedicated VPC rather than the default AWS VPC.
 | Private subnet A | `10.50.11.0/24` |
 | Private subnet B | `10.50.12.0/24` |
 
-The public subnets host the internet-facing Application Load Balancer.
+Public subnets have an internet-gateway route and host the ALB. Private subnets have no NAT Gateway and no default internet route. EC2 instances run an embedded Python HTTP application installed through EC2 User Data, without downloading dependencies at startup. The launch template requires IMDSv2. The ALB security group permits HTTP from the approved `/32` only; the EC2 security group permits port 8080 from the ALB security group only.
 
-The private subnets host EC2 instances managed by an Auto Scaling Group.
+## 3. Repository structure
 
-No NAT Gateway is configured. The application is initialized using Amazon Linux 2023 User Data and does not require internet downloads during startup.
+```text
+cloudformation/
+  network/network.yaml
+  platform/platform.yaml
+  platform/platform-packaged.yaml
+  provisioning/asg.yaml
+lambda/platform/app.py
+frontend/index.html
+docs/adr/
+scripts/Get-SelfServiceHealth.ps1
+README.md
+```
 
-## 3. Prerequisites
+`platform.yaml` is the **source template**. `platform-packaged.yaml` is a generated deployment template whose Lambda `Code` property references an S3 ZIP artifact. Do not hand-edit the packaged file as the primary source of changes.
 
-Before deploying, ensure the following tools and permissions are available:
+## 4. Prerequisites and configuration
 
-- AWS CLI v2
-- Configured AWS credentials and default Region
-- CloudFormation, EC2, Elastic Load Balancing, Auto Scaling, Lambda, API Gateway, and IAM deployment permissions
-- PowerShell or another compatible terminal
+- AWS CLI v2 with valid credentials and deployment permissions for CloudFormation, S3, IAM, Lambda, API Gateway, Cognito, EC2, Elastic Load Balancing, and Auto Scaling.
+- PowerShell (examples below), Python 3 for serving the frontend, and a modern browser supporting Web Crypto.
+- Region `eu-north-1`; commands below explicitly set this region.
+- An S3 artifact bucket named `self-service-artifacts-<account-id>-eu-north-1` containing `cloudformation/asg.yaml` and the packaged Lambda ZIP. Creating and maintaining the bucket and uploading the application template are prerequisites; this README does not automate bucket creation.
+- A Cognito user created or invited by an administrator. The user pool is configured for admin-created users only.
 
-Run the following commands from the repository root:
+From the repository root:
 
 ```powershell
-cd D:\git\AWS_Self_Service_Platform
-
 aws sts get-caller-identity
-aws configure get region
+aws cloudformation validate-template --region eu-north-1 --template-body file://cloudformation/network/network.yaml
+aws cloudformation validate-template --region eu-north-1 --template-body file://cloudformation/platform/platform-packaged.yaml
+aws cloudformation validate-template --region eu-north-1 --template-body file://cloudformation/provisioning/asg.yaml
 ```
 
-Ensure that the AWS account and Region are correct before deployment.
+CloudFormation validation checks template syntax/basic structure, not all runtime permissions or successful deployment.
 
-## 4. Validate CloudFormation Templates
+## 5. Deploy the network stack
 
-Validate each template before creating resources.
-
-```powershell
-aws cloudformation validate-template `
-  --template-body file://cloudformation/network/network.yaml
-
-aws cloudformation validate-template `
-  --template-body file://cloudformation/platform/platform.yaml
-
-aws cloudformation validate-template `
-  --template-body file://cloudformation/provisioning/asg.yaml
-```
-
-Successful validation confirms CloudFormation template syntax and basic structure. It does not guarantee that deployment will succeed.
-
-## 5. Deploy Stack 1 — Network
-
-Deploy the network infrastructure first.
+**Skip this step if `self-service-network` is already deployed and unchanged.**
 
 ```powershell
 aws cloudformation deploy `
+  --region eu-north-1 `
   --template-file cloudformation/network/network.yaml `
   --stack-name self-service-network `
   --tags Project=AWS-Self-Service Environment=Dev
-```
 
-Verify deployment:
-
-```powershell
-aws cloudformation describe-stacks `
-  --stack-name self-service-network `
-  --query "Stacks[0].StackStatus"
-```
-
-Expected status:
-
-`CREATE_COMPLETE` or `UPDATE_COMPLETE`
-
-View the network exports:
-
-```powershell
-aws cloudformation list-exports `
+aws cloudformation list-exports --region eu-north-1 `
   --query "Exports[?starts_with(Name, 'self-service-')]"
 ```
 
-Expected exports include:
+Expected exports: `self-service-vpc-id`, `self-service-public-subnet-a`, `self-service-public-subnet-b`, `self-service-private-subnet-a`, `self-service-private-subnet-b`.
 
-- `self-service-vpc-id`
-- `self-service-public-subnet-a`
-- `self-service-public-subnet-b`
-- `self-service-private-subnet-a`
-- `self-service-private-subnet-b`
+## 6. Package and deploy the platform
 
-These exports are used by the provisioning stack.
+**Skip deployment if the platform is already deployed and no code or template changes are intended.** Packaging uploads the local Lambda code to S3; deployment updates AWS resources and can incur charges.
 
-## 6. Deploy Stack 2 — Platform
+Set the account-specific bucket name:
 
-Deploy the API Gateway and Lambda control plane.
+```powershell
+$Region = 'eu-north-1'
+$AccountId = (aws sts get-caller-identity --query Account --output text).Trim()
+$Bucket = "self-service-artifacts-$AccountId-$Region"
+```
+
+Upload the provisioning template that Lambda will request. Keep its S3 key exactly `cloudformation/asg.yaml`, as referenced in the Lambda environment and IAM conditions:
+
+```powershell
+aws s3 cp cloudformation/provisioning/asg.yaml "s3://$Bucket/cloudformation/asg.yaml" --region $Region
+```
+
+Package the Lambda directory referenced by `platform.yaml`:
+
+```powershell
+aws cloudformation package `
+  --region $Region `
+  --template-file cloudformation/platform/platform.yaml `
+  --s3-bucket $Bucket `
+  --output-template-file cloudformation/platform/platform-packaged.yaml
+```
+
+Deploy the generated template. The source defines named IAM roles, so use `CAPABILITY_NAMED_IAM`:
 
 ```powershell
 aws cloudformation deploy `
-  --template-file cloudformation/platform/platform.yaml `
+  --region $Region `
+  --template-file cloudformation/platform/platform-packaged.yaml `
   --stack-name self-service-platform `
-  --capabilities CAPABILITY_IAM `
+  --capabilities CAPABILITY_NAMED_IAM `
   --tags Project=AWS-Self-Service Environment=Dev
 ```
 
-Verify:
+Retrieve configuration values:
 
 ```powershell
 aws cloudformation describe-stacks `
+  --region $Region `
   --stack-name self-service-platform `
-  --query "Stacks[0].StackStatus"
+  --query 'Stacks[0].Outputs' `
+  --output table
 ```
 
-Retrieve the stack outputs:
+Look for `ApiEndpoint`, `HealthEndpoint`, `PortalCognitoDomain`, `PortalAppClientId`, and `PortalUserPoolId`. These identifiers are not secrets; **never publish access tokens, authorization codes, passwords, or AWS credentials**.
+
+## 7. Run the self-service portal
+
+The frontend is a local static HTML page, not an S3/CloudFront website.
 
 ```powershell
-aws cloudformation describe-stacks `
-  --stack-name self-service-platform `
-  --query "Stacks[0].Outputs"
+cd frontend
+python -m http.server 8094
 ```
 
-Locate the API Gateway endpoint and test its health route:
+Open `http://localhost:8094/`. Configure the API Gateway base URL, Cognito domain, and app client ID using the platform stack outputs. The frontend saves these **public configuration identifiers** in browser `localStorage`. It keeps the access token in page memory only; a page refresh requires another login.
+
+1. Select **Check API health**; this calls unauthenticated `GET /health`.
+2. Select **Login with Cognito**. The browser generates a PKCE verifier/challenge and OAuth state, redirects to Cognito Managed Login, validates the returned state, and exchanges the authorization code for tokens.
+3. Select **Check ASG stack status**. This calls authenticated `GET /stack`. If the fixed application stack does not exist, the expected response is `{"status":"NOT_FOUND","stackName":"self-service-asg-lab01"}`.
+4. Only when intentionally testing billable provisioning: enter your current public IPv4 address (without `/32`) and select **Provision ASG — lab01**. Confirm the browser prompt. Lambda validates the global IPv4 address, converts it to `/32`, and requests `CreateStack` with `t3.micro`.
+5. A successful request returns HTTP **202** with `CREATE_REQUESTED`. This is **not** a guarantee of successful infrastructure creation. Use **Refresh stack status** to monitor CloudFormation. V1 does not auto-poll.
+
+To discover the public IPv4 address from PowerShell:
 
 ```powershell
-Invoke-RestMethod -Uri "https://YOUR_API_ENDPOINT/health"
+(Invoke-RestMethod -Uri 'https://checkip.amazonaws.com').Trim()
 ```
 
-Expected response:
+If the public IP changes, the existing ALB security-group rule does not update automatically. The frontend requires a fresh status check before provisioning and prevents repeat submission while a request is in progress. The backend returns HTTP 409 if the fixed stack already exists.
 
-```json
-{
-  "status": "healthy",
-  "service": "aws-self-service-platform",
-  "message": "API Gateway to Lambda integration works"
-}
-```
+### API routes
 
-**Implementation note:** The deployed Lambda currently uses inline Python code defined in `platform.yaml`. The separate `lambda/platform/app.py` file is not yet used as the deployment source.
+| Method | Route | Authorization | Behavior |
+|---|---|---|---|
+| GET | `/health` | None | Reports API Gateway-to-Lambda health |
+| GET | `/stack` | Cognito JWT (`openid` scope) | Returns current fixed stack status or `NOT_FOUND` |
+| POST | `/provision` | Cognito JWT (`openid` scope) | Validates `{"publicIp":"x.x.x.x"}` and requests fixed stack creation |
 
-## 7. Deploy Stack 3 — Application Environment
+There are no portal/API endpoints to update or delete application stacks in V1.
 
-Each application environment is deployed as its own independent CloudFormation stack.
+## 8. Application stack details and optional manual testing
 
-The stack creates:
+The application template creates an ALB, security groups, listener, target group, launch template, and ASG. The EC2 User Data writes a Python HTTP server and a `systemd` service. Application endpoints are `/` and `/health`; ALB health checks expect HTTP 200 on `/health` at port 8080.
 
-- An internet-facing Application Load Balancer
-- An ALB security group with HTTP access restricted to an approved public IP
-- An EC2 security group allowing port 8080 only from the ALB
-- A target group with health checks at `/health`
-- An EC2 launch template using Amazon Linux 2023
-- An Auto Scaling Group in private subnets
-
-Auto Scaling configuration:
-
-| Setting | Value |
-|---|---|
-| Minimum capacity | 1 |
-| Desired capacity | 1 |
-| Maximum capacity | 2 |
-| Application port | 8080 |
-| ALB listener | HTTP 80 |
-| Health check | `/health` |
-
-### 7.1 Identify your public IP
-
-Determine your current public IPv4 address using a trusted public-IP service or your network configuration.
-
-Set the allowed CIDR in PowerShell:
-
-(Invoke-RestMethod -Uri "https://checkip.amazonaws.com").Trim()
+For a **separate, manual application test** (not the fixed portal target), choose a stack name such as `self-service-asg-test01`:
 
 ```powershell
-$AllowedCidr = "YOUR_PUBLIC_IP/32"
-```
+$PublicIp = (Invoke-RestMethod -Uri 'https://checkip.amazonaws.com').Trim()
+$AllowedCidr = "$PublicIp/32"
 
-Replace `YOUR_PUBLIC_IP` with your actual public IPv4 address.
-
-### 7.2 Deploy the application stack
-
-
-with approval:
+# Prepare a change set without executing it:
 aws cloudformation deploy `
+  --region eu-north-1 `
   --template-file cloudformation/provisioning/asg.yaml `
   --stack-name self-service-asg-test01 `
   --parameter-overrides AllowedCidr=$AllowedCidr `
   --no-execute-changeset `
   --tags Project=AWS-Self-Service Environment=Dev
-
-
-without approval:
-```powershell
-aws cloudformation deploy `
-  --template-file cloudformation/provisioning/asg.yaml `
-  --stack-name self-service-asg-test01 `
-  --parameter-overrides AllowedCidr=$AllowedCidr `
-  --tags Project=AWS-Self-Service Environment=Dev
 ```
 
-The deployment uses the network resources exported by Stack 1.
+**Warning:** Removing `--no-execute-changeset` permits creation of billable ALB/EC2 resources. Only do so with explicit intent. Manual testing is optional and separate from portal provisioning.
 
-### 7.3 Verify the deployment
+After successful deployment, inspect stack outputs for `ApplicationURL` and verify `http://<ALB-DNS>/health` from the approved public IP. Allow time for instance initialization and ALB target health checks. `CREATE_COMPLETE` alone does not prove the application is healthy.
 
-```powershell
-aws cloudformation describe-stacks `
-  --stack-name self-service-asg-test01 `
-  --query "Stacks[0].StackStatus"
-```
-
-View stack outputs:
-
-```powershell
-aws cloudformation describe-stacks `
-  --stack-name self-service-asg-test01 `
-  --query "Stacks[0].Outputs"
-```
-
-look for:
-"OutputKey": "ApplicationURL",
-        "OutputValue": "http://self-service-asg-test01-alb-xx.eu-north-1.elb.amazonaws.com",
-        "Description": "HTTP URL for the demo application"
-
-Locate the Application Load Balancer DNS name and open:
-
-```text
-http://YOUR_ALB_DNS_NAME/health
-http://self-service-asg-test01-alb-565139743.eu-north-1.elb.amazonaws.com/health
-```
-wait for few minutes (it taks time to publish public dns)
-
-Expected response:
-
-```json
-{
-  "status": "healthy"
-}
-```
-
-This confirms that the request reaches the ALB, is forwarded to a healthy EC2 target, and receives a response from the application.
-
-## 8. Operational Verification
-
-List project stacks:
+## 9. Read-only operational verification
 
 ```powershell
 aws cloudformation list-stacks `
-  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE `
-  --query "StackSummaries[?starts_with(StackName, 'self-service-')].[StackName,StackStatus]"
+  --region eu-north-1 `
+  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE CREATE_IN_PROGRESS UPDATE_IN_PROGRESS `
+  --query "StackSummaries[?starts_with(StackName, 'self-service-')].[StackName,StackStatus]" `
+  --output table
+
+aws lambda get-function-configuration `
+  --region eu-north-1 `
+  --function-name self-service-platform-handler `
+  --query '{Name:FunctionName,State:State,LastUpdateStatus:LastUpdateStatus,Runtime:Runtime,CodeSha256:CodeSha256}'
+
+$ApiEndpoint = (aws cloudformation describe-stacks `
+  --region eu-north-1 `
+  --stack-name self-service-platform `
+  --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue | [0]" `
+  --output text).Trim()
+Invoke-RestMethod -Uri "$ApiEndpoint/health"
 ```
 
-Inspect stack resources:
+For authenticated `GET /stack`, use the local portal. Do not paste bearer tokens into terminal logs or shared messages. For application stack diagnostics, inspect CloudFormation stack events, Auto Scaling activities, and ALB target-group health.
+
+## 10. Cleanup and cost controls
+
+**Billable resources:** An application stack creates an ALB and EC2 instances, and may incur associated network, storage, and other charges. Lambda, API Gateway, Cognito, S3, and related platform services can also incur charges depending on usage and free-tier eligibility. The network/platform stacks are **not guaranteed free**.
+
+Delete application stacks after testing. The following commands are destructive; review the target stack name first:
 
 ```powershell
-aws cloudformation list-stack-resources `
-  --stack-name self-service-asg-test01
+aws cloudformation delete-stack --region eu-north-1 --stack-name self-service-asg-lab01
+aws cloudformation wait stack-delete-complete --region eu-north-1 --stack-name self-service-asg-lab01
 ```
 
-Inspect recent stack events:
+If you created a separate `self-service-asg-test01` stack, delete it separately. To completely dismantle the lab, delete all application stacks first, then `self-service-platform`, then `self-service-network`. Network exports cannot be removed while still imported by an application stack. Check AWS billing and any residual resources after cleanup.
 
-```powershell
-aws cloudformation describe-stack-events `
-  --stack-name self-service-asg-test01 `
-  --query "StackEvents[0:10].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]"
-```
+## 11. Security and V1 limitations
 
-For troubleshooting, also inspect EC2 instance status, Auto Scaling activity, and ALB target-group health in the AWS Console.
+**Implemented guardrails:**
 
-## 9. Cleanup — Avoid Unnecessary AWS Charges
+- Cognito Managed Login with OAuth 2.0 Authorization Code + PKCE (S256) and OAuth state validation.
+- API Gateway JWT authorizer on provisioning and stack-status routes; access token requested with `openid email` scopes.
+- Fixed stack name `self-service-asg-lab01`, fixed provisioning template S3 URL, fixed `t3.micro` instance type, and backend validation of the allowed global IPv4 `/32`.
+- Separate Lambda and CloudFormation execution IAM roles; IAM conditions constrain the CloudFormation execution role ARN and provisioning template URL.
+- Public ALB ingress restricted to the approved IPv4 `/32`; private EC2 instances accept traffic only from the ALB security group.
+- EC2 IMDSv2 required. No NAT Gateway and no public EC2 IP addresses.
+- Browser confirmation before provisioning; HTTP 409 for an existing stack.
 
-**Important:** The application stack creates billable resources, including an Application Load Balancer and EC2 instances.
+**Known limitations / future hardening:**
 
-Delete application stacks when they are no longer required.
+- ALB listener uses **HTTP**, not HTTPS; suitable only for a controlled lab.
+- Some CloudFormation execution role permissions use `Resource: '*'`; tighten IAM scope and review permissions for production.
+- No automatic stack-status polling, app URL display in the portal, token refresh, or background session-expiration UI updates.
+- No portal/API deletion, updates, template catalog, user-specific stack isolation, quotas, approval workflow, or FinOps estimates.
+- CloudFormation `OnFailure=DELETE` may remove failed stacks before detailed troubleshooting; `CREATE_REQUESTED` is not proof of application readiness.
+- No dynamic ASG scaling policy. No configured SSM instance profile or private connectivity for Session Manager.
+- No formal production readiness, load testing, or multi-user authorization model.
 
-### Delete Stack 3
+## 12. Verification record — November 3, 2026
 
-```powershell
-aws cloudformation delete-stack `
-  --stack-name self-service-asg-test01
-
-aws cloudformation wait stack-delete-complete `
-  --stack-name self-service-asg-test01
-```
-
-### Delete Stack 2
-
-```powershell
-aws cloudformation delete-stack `
-  --stack-name self-service-platform
-
-aws cloudformation wait stack-delete-complete `
-  --stack-name self-service-platform
-```
-
-### Delete Stack 1
-
-```powershell
-aws cloudformation delete-stack `
-  --stack-name self-service-network
-
-aws cloudformation wait stack-delete-complete `
-  --stack-name self-service-network
-```
-
-Delete application stacks before deleting the network stack because they depend on its exported resources.
-
-For normal development, it is possible to retain Stacks 1 and 2 while deleting only Stack 3 to reduce ongoing costs. Check for any remaining billable resources.
-
-## 10. Current Implementation Status
-
-| Component | Status |
+| Verification | Result |
 |---|---|
-| Dedicated VPC and networking | Completed and tested |
-| API Gateway and Lambda health endpoint | Completed and tested |
-| ALB and private EC2 Auto Scaling Group | Completed and tested |
-| Application health endpoint | Completed and tested |
-| Automated provisioning through Lambda | Not implemented |
-| Authenticated provisioning API | Not implemented |
-| CloudFormation stack status tracking | Not implemented |
-| Developer self-service portal | Not implemented |
+| `self-service-network` | `CREATE_COMPLETE` |
+| `self-service-platform` | `UPDATE_COMPLETE` |
+| Deployed Lambda `self-service-platform-handler` | `Active`; last update `Successful`; Python 3.13 |
+| API Gateway `GET /health` | Returned `healthy` and expected service/message |
+| Cognito login + protected `GET /stack` | User reported successful end-to-end portal test |
+| Packaged Lambda ZIP exists in S3 | Confirmed |
+| Deployed Lambda `CodeSha256` matches referenced S3 ZIP | Confirmed exact match |
+| Local `app.py` content matches packaged ZIP | **Not separately verified** |
+| Live `POST /provision` and new application creation | **Not rerun in this final session**; application stacks intentionally absent |
 
-## 11. Planned Enhancements
+The control plane is **verified**. Prior application deployment/ALB health testing is documented in the earlier README, but a new end-to-end provisioning run was deliberately not performed during this final verification to avoid billable resources.
 
-1. Separate Lambda application code from the inline CloudFormation definition.
-2. Introduce an authenticated provisioning API with input validation.
-3. Add least-privilege IAM permissions for CloudFormation provisioning.
-4. Make provisioning templates accessible to Lambda, potentially through S3.
-5. Implement CloudFormation `CreateStack` and status tracking.
-6. Add application stack deletion and error handling.
-7. Build a developer-facing self-service portal.
-8. Optionally introduce VPC peering with the separate AWS Application Infrastructure environment.
+## 13. V1 completion and roadmap
 
-## 12. Security Considerations
+**V1 status:** Implementation complete and control-plane verified; README updated. V1 is considered a completed **proof of concept** with the explicit verification limitations above, not a production-ready platform.
 
-- EC2 instances run in private subnets without direct public IP addresses.
-- The ALB is public but restricts inbound HTTP traffic to an approved CIDR.
-- Application instances accept port 8080 traffic only from the ALB security group.
-- Lambda provisioning permissions have not yet been implemented.
-- Do not expose an unauthenticated public endpoint capable of creating AWS resources.
-- The current HTTP listener is suitable for a controlled development proof of concept; production use should introduce HTTPS and appropriate authentication and security controls.
+Potential future versions: automatic status polling and improved UX; portal-managed deletion and lifecycle operations; stronger IAM restrictions; a reusable template catalog (EC2, ECS, EKS, RDS); FinOps cost estimation; and expanded operational observability.
 
-## 13. Project Goal
-
-The long-term goal is to provide developers with a self-service interface that can provision isolated AWS application environments without requiring direct access to infrastructure administration tools.
-
-CloudFormation manages infrastructure lifecycle, API Gateway and Lambda provide the control plane, and each application environment is independently created, monitored, and deleted.
+The long-term objective remains developer self-service infrastructure provisioning without giving application users direct infrastructure administration permissions.
